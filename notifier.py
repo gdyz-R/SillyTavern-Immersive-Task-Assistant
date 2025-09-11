@@ -1,7 +1,7 @@
 import time
 import json
 import datetime
-from winotify import Notification, Notifier
+from winotify import Notification
 import ctypes
 import numpy as np
 import os
@@ -36,11 +36,6 @@ messages = [
     "基础不牢，地动山摇，复习一下这个知识点",
     "这张知识图谱对你的学习有帮助"
 ]
-notifier = Notifier(
-    app_id="SillyTavern Immersive Task Assistant",
-    icon=os.path.join(os.path.dirname(sys.argv[0]), 'icon.png'),
-    threaded=True
-)
 
 # --- 核心功能函数 ---
 
@@ -102,18 +97,21 @@ def send_notification():
     message = np.random.choice(messages)
     
     toast = Notification(
+        app_id="SillyTavern Immersive Task Assistant",
         title="林教授的每日提醒",
         msg=f"{message}\n今天的任务是: “{task_title}”",
+        icon=os.path.join(os.path.dirname(sys.argv[0]), 'icon.png'),
         duration="long"
     )
     
-    if notifier.show(toast):
-        try:
-            with open(LAST_DATE_FILE, 'w') as f:
-                f.write(today_str)
-            print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] 提醒发送成功，并已记录日期。")
-        except Exception as e:
-            print(f"错误: 无法写入上次通知日期文件: {e}")
+    toast.show()
+
+    try:
+        with open(LAST_DATE_FILE, 'w') as f:
+            f.write(today_str)
+        print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] 提醒发送成功，并已记录日期。")
+    except Exception as e:
+        print(f"错误: 无法写入上次通知日期文件: {e}")
 
 # <<< FIX START: 新增的“每日一次”检查函数 >>>
 def has_notified_today():
@@ -124,7 +122,6 @@ def has_notified_today():
         today_str = datetime.date.today().isoformat()
         return last_date_str == today_str
     except FileNotFoundError:
-        # 如果文件不存在，说明从未发送过，可以发送
         return False
     except Exception as e:
         print(f"警告: 无法读取上次通知日期文件: {e}。将按未通知处理。")
@@ -140,13 +137,10 @@ def main_monitoring_loop():
     while True:
         now = datetime.datetime.now()
         
-        # <<< FIX START: 将“每日一次”检查作为最高优先级 >>>
+        # 每日一次检查
         if has_notified_today():
-            # 如果今天已经提醒过，则无需再进行任何检查，大幅降低资源占用
-            # 直接休眠10分钟，然后进入下一个循环，再次检查日期
-            time.sleep(600) 
-            continue # 跳过本次循环的后续所有逻辑
-        # <<< FIX END >>>
+            time.sleep(600)
+            continue
 
         if get_idle_duration() < CHECK_INTERVAL_SECONDS: # 用户正在活跃
             if is_planning:
@@ -159,7 +153,6 @@ def main_monitoring_loop():
             if idle_duration > IDLE_THRESHOLD_SECONDS and not is_planning:
                 if not is_in_class(now, load_schedule()):
                     print(f"[{now.strftime('%H:%M:%S')}] 检测到空闲状态开始。正在计划下一次提醒...")
-                    # 使用韦伯分布计算下一次提醒的延迟时间
                     delay_minutes = np.random.weibull(WEIBULL_SHAPE) * WEIBULL_SCALE_MINUTES
                     delay_seconds = delay_minutes * 60
                     next_notification_time = now + datetime.timedelta(seconds=delay_seconds)
@@ -169,10 +162,8 @@ def main_monitoring_loop():
         if is_planning and now >= next_notification_time:
             print(f"[{now.strftime('%H:%M:%S')}] 到达计划时间，正在发送提醒...")
             send_notification()
-            # 重置状态，避免重复发送
             next_notification_time = None
             is_planning = False
-            # 发送成功后，has_notified_today()将在下一个循环中返回True，从而进入长时休眠
 
         time.sleep(CHECK_INTERVAL_SECONDS)
 
@@ -181,7 +172,6 @@ if __name__ == "__main__":
     print("======================================================")
     print("林教授的每日提醒脚本已启动 (智能韦伯调度模式)...")
     
-    # 检查icon.png是否存在
     icon_path = os.path.join(os.path.dirname(sys.argv[0]), 'icon.png')
     if not os.path.exists(icon_path):
         print("警告: 未在脚本目录找到 icon.png 文件，通知可能不显示图标。")
